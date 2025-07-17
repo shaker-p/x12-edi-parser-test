@@ -4,6 +4,7 @@
 [![POC](https://img.shields.io/badge/POC-10_days-green?style=for-the-badge)](https://databricks.com/try-databricks)
 
 # Business Problem 
+# Business Problem 
 
 Working with various x12 EDI transactions in Spark on Databricks.
 
@@ -19,9 +20,13 @@ pip install git+https://github.com/databricks-industry-solutions/x12-edi-parser
 
 > [!NOTE]
 > The recommended parsing path has been updated to be more effecient. You can still reference the previous approach in [this](https://github.com/databricks-industry-solutions/x12-edi-parser/commit/544f48e3cb9ebcf01027adb0867a3a2d6c0e768c) commit.
+> The recommended parsing path has been updated to be more effecient. You can still reference the previous approach in [this](https://github.com/databricks-industry-solutions/x12-edi-parser/commit/544f48e3cb9ebcf01027adb0867a3a2d6c0e768c) commit.
 
 
 ```python
+from databricksx12 import *
+from databricksx12.hls import *
+import json
 from databricksx12 import *
 from databricksx12.hls import *
 import json
@@ -29,9 +34,15 @@ from pyspark.sql.functions import input_file_name
 
 #This class manages how the different formats are parsed together
 hm = HealthcareManager()
+#This class manages how the different formats are parsed together
+hm = HealthcareManager()
 df = spark.read.text("sampledata/837/*txt", wholetext = True)
 
 rdd = (
+df.withColumn("filename", input_file_name()).rdd
+.map(lambda row: (row.filename, EDI(row.value)))
+.map(lambda edi: hm.flatten(edi[1], filename = edi[0]))
+.flatMap(lambda x: x)
 df.withColumn("filename", input_file_name()).rdd
 .map(lambda row: (row.filename, EDI(row.value)))
 .map(lambda edi: hm.flatten(edi[1], filename = edi[0]))
@@ -87,6 +98,7 @@ SELECT * FROM claim_line
 
 ```
 
+### Sample Output and Data Dictionary
 ### Sample Output and Data Dictionary
 
 ![image](images/claim_header2.png?raw=true)
@@ -144,12 +156,20 @@ claims.select("provider_adjustments").printSchema()
 Currently supports 837s and 835s. Records in each format type are recommended to be saved separately to avoid any ambiguity and opaqueness, e.g. do not to mix 835, 837i, 837p in df.save() command.  
 
 ## Sample data outside of Spark
+## Reading & Parsing Healthcare Transactions
+
+Currently supports 837s and 835s. Records in each format type are recommended to be saved separately to avoid any ambiguity and opaqueness, e.g. do not to mix 835, 837i, 837p in df.save() command.  
+
+## Sample data outside of Spark
 
 ```python
 from databricksx12 import *
 from databricksx12.hls import *
+from databricksx12 import *
+from databricksx12.hls import *
 import json
 
+hm = HealthcareManager()
 hm = HealthcareManager()
 edi =  EDI(open("sampledata/837/CHPW_Claimdata.txt", "rb").read().decode("utf-8"))
 
@@ -183,6 +203,34 @@ N3*987 65TH PL
 """
 ```
 
+## Raw EDI as a Table 
+
+```python
+""""
+Look at all data refernce -> https://justransform.com/edi-essentials/edi-structure/
+  (1) Including control header / ISA & IEA segments
+"""
+from pyspark.sql.functions import input_file_name
+
+( df.withColumn("filename", input_file_name()).rdd
+  .map(lambda x: (x.asDict().get("filename"),x.asDict().get("value")))
+  .map(lambda x: (x[0], EDI(x[1])))
+  .map(lambda x: [{**{"filename": x[0]}, **y} for y in x[1].toRows()])
+  .flatMap(lambda x: x)
+  .toDF()).show()
+
+"""
++--------------------+----------+--------------------------+--------------+------------+-----------------------------+--------+
+|            row_data|row_number|segment_element_delim_char|segment_length|segment_name|segment_subelement_delim_char|filename|
++--------------------+----------+--------------------------+--------------+------------+-----------------------------+--------+
+|ISA*00*          ...|         0|                         *|            17|         ISA|                            :|file:///|
+|GS*HC*CLEARINGHOU...|         1|                         *|             9|          GS|                            :|file:///|
+|ST*837*000000001*...|         2|                         *|             4|          ST|                            :|file:///|
+|BHT*0019*00*73490...|         3|                         *|             7|         BHT|                            :|file:///|
+|NM1*41*2*CLEARING...|         4|                         *|            10|         NM1|                            :|file:///|
+|PER*IC*CLEARINGHO...|         5|                         *|             7|         PER|                            :|file:///|
+|NM1*40*2*12345678...|         6|                         *|            10|         NM1|                            :|file:///|
+```
 ## Raw EDI as a Table 
 
 ```python
