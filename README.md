@@ -3,17 +3,9 @@
 [![CLOUD](https://img.shields.io/badge/CLOUD-ALL-blue?logo=googlecloud&style=for-the-badge)](https://cloud.google.com/databricks)
 [![POC](https://img.shields.io/badge/POC-10_days-green?style=for-the-badge)](https://databricks.com/try-databricks)
 
-# Databricks Ember for EDI Formats
+# Business Problem 
 
-Working with various x12 EDI transactions in Spark on Databrick with databricksx12 / ember python package. Supporting
-- **837i (institutional medical claims)**  
-- **837p (professional medial claims)**
-- **834 (Enrollment)**
-- **835 (Remittance / payment on claims)**
-
-[Data dictionaries available](/doc/)
-
-### Thanks to contributions from our partners at [CitiusTech](https://www.citiustech.com/) 834 is now supported along with additional insights from 837s. 
+Working with various x12 EDI transactions in Spark on Databricks.
 
 # Install
 
@@ -26,73 +18,24 @@ pip install git+https://github.com/databricks-industry-solutions/x12-edi-parser
 ### 837i and 837p sample data in Spark
 
 > [!NOTE]
-> All types of EDI formats can be procesed with the same code below. However, it is recommended to build dataframes and save by resource type (837i/837p, 835, 834) to avoid confusion over empty values on a row.
+> The recommended parsing path has been updated to be more effecient. You can still reference the previous approach in [this](https://github.com/databricks-industry-solutions/x12-edi-parser/commit/544f48e3cb9ebcf01027adb0867a3a2d6c0e768c) commit.
 
-
-#### Using mapInArrow (recommended, fastest processing)
 
 ```python
-from ember import *
-from ember.hls import *
-#This class manages how the different formats are parsed together
-from ember.hls.healthcare import HealthcareManager as hm
-import json, itertools
-from typing import Iterator
-
-
-# operates over a partition of data
-# @param assumes DF column name "value" has EDI string data
-def process_batch(batch): 
-  return [json.dumps(d) for d in itertools.chain(*map(process_edi_string, batch.column("value")))]
-
-#row processing function, converts String to json() data of claims info
-def process_edi_string(edi_string): 
-  try:
-    return [claim.to_json() for claim in hm.from_edi(EDI(edi_string.as_py(), strict_transactions=False))]
-  except Exception as e:
-    return [{"is_error": "true", "error": str(e), "error_data": edi_string.as_py()}]
-
-# Operates over multiple batches in a partition
-def process_edi_batches_to_json(batches: Iterator[pa.RecordBatch]) -> Iterator[pa.RecordBatch]:
-    # The function receives an ITERATOR of batches, so we loop through it
-    all_json_strings_from_batch = itertools.chain(*map(process_batch,batches))
-    # After processing all rows, if we have results, create and yield a new batch
-    if all_json_strings_from_batch:
-        json_array = pa.array(all_json_strings_from_batch, type=pa.string())
-        yield pa.RecordBatch.from_arrays([json_array], names=['edi_json'])
-
-#running with a DF      
-#df = ... column name "value" contains raw string of  EDI file
-df.mapInArrow(process_edi_batches_to_json, StructType([StructField("edi_json", StringType(), True)]))
-
-#reuse result 
-result_df.cache()
-
-#Claim count extracted from data
-result_df.count()
-
-#Save off parsed information
-claims = spark.read.json(result_df.rdd.map(lambda x: x.edi_json))
-
-#claims.write.mode(...).saveAsTable()
-```
-
-#### Splitting with RDDs (not recommended)
-
-```python
-from ember import *
-from ember.hls import *
-#This class manages how the different formats are parsed together
-from ember.hls.healthcare import HealthcareManager as hm
-import json, itertools
+from databricksx12 import *
+from databricksx12.hls import *
+import json
 from pyspark.sql.functions import input_file_name
 
+#This class manages how the different formats are parsed together
+hm = HealthcareManager()
 df = spark.read.text("sampledata/837/*txt", wholetext = True)
 
 rdd = (
-df.withColumn("filename", input_file_name()).rdd #convert to rdd
-.map(lambda row: (row.filename, EDI(row.value))) #parse as an EDI format
-.flatMap(lambda edi: hm.flatten(edi[1], filename = edi[0])) #extract out healthcare specific groupings, one row per claim/remittance/enrollment etc
+df.withColumn("filename", input_file_name()).rdd
+.map(lambda row: (row.filename, EDI(row.value)))
+.map(lambda edi: hm.flatten(edi[1], filename = edi[0]))
+.flatMap(lambda x: x)
 )
 
 ```
@@ -144,7 +87,7 @@ SELECT * FROM claim_line
 
 ```
 
-### Sample Output
+### Sample Output and Data Dictionary
 
 ![image](images/claim_header2.png?raw=true)
 ![image](images/claim_line2.png?raw=true)
@@ -196,103 +139,18 @@ claims.select("provider_adjustments").printSchema()
 ![image](images/remittance_2.png?raw=true)
 
 
-## Error trapping and restartability 
+## Reading & Parsing Healthcare Transactions
 
-Sharing a sample of how to build error handling, transparency, and restartability using EDI over RDDs
+Currently supports 837s and 835s. Records in each format type are recommended to be saved separately to avoid any ambiguity and opaqueness, e.g. do not to mix 835, 837i, 837p in df.save() command.  
 
-```python 
-#helper class to store input/output information from each stage 
-class ProcessingResult:
-    """Container for processing results with error handling"""   
-    def __init__(self, run_id, success, data = None, 
-                 error_message = "None", error_func = "None", 
-                 processing_timestamp = None):
-        self.run_id = run_id
-        self.success = success
-        self.data = data
-        self.error_message = error_message
-        self.error_func = error_func
-        self.processing_timestamp = processing_timestamp or [datetime.now().isoformat()] #track timestamps for each step of processing
-    
-    def to_dict(self):
-        """Convert to dictionary for DataFrame serialization"""
-        return {
-            "run_id": self.run_id,
-            "success": self.success,
-            "error_message": self.error_message,
-            "error_func": self.error_func,
-            "processing_timestamp": self.processing_timestamp
-        }
-    #for flatMap() calls
-    def __iter__(self): 
-        if not isinstance(self.data, list):
-            yield self
-        else:
-            for d in self.data:
-                yield ProcessingResult(self.run_id, self.success, d, self.error_message, self.error_func, self.processing_timestamp)
-    def to_row(self) -> Row:
-        """Convert to PySpark Row"""
-        return Row(**self.to_dict())
-
-#function to consistently execute on each stage 
-def process_edi(processing_result, func, **xargs):
-    if not processing_result.success: #if a command has failed return immediately
-        return processing_result 
-    else:
-        try:
-            return ProcessingResult(
-                run_id = processing_result.run_id,
-                success = True,
-                data = func(processing_result.data, **xargs),
-                error_message = "None",
-                error_func = "None",
-                processing_timestamp = processing_result.processing_timestamp + [(str(func) + ":" + datetime.now().isoformat())]
-            )
-        
-        except Exception as e:
-            error_message = str(e)
-            stack_trace = traceback.format_exc()
-            
-            return ProcessingResult(
-                run_id = processing_result.run_id,
-                success = False,
-                data = None,
-                error_message = f"{error_message}\nStack trace: {stack_trace}",
-                error_func = str(func),
-                processing_timestamp = datetime.now().isoformat()
-            )
-#sample execution
-df = ...
-result = (
-    df.
-        rdd.
-        map(lambda row: #build EDI
-          process_edi(
-            ProcessingResult(run_id=<distinct run identifier/filename>
-                ,success=True,
-                data=row.value,  #column name of EDI data in df
-                error_message=None, 
-                error_func=None), EDI, strict_transactions=False)).
-        flatMap(lambda pr: process_edi(pr, hm.flatten)). #build Healthcare specific configurations
-        repartition(<# of cluster CPUs or higher>).
-        map(lambda pr: process_edi(pr, hm.flatten_to_json)). #parse data 
-        map(lambda pr: process_edi(pr, json.dumps)) #dump as json format
-)
-
-claims_data = spark.read.json((result.filter(lambda x: x.success).map(lambda x: x.data)))
-run_metadata = result.map(lambda x: x.to_row()).toDF()
-
-```
-
-
-## Small sampling of data 
+## Sample data outside of Spark
 
 ```python
-from ember import *
-from ember.hls import *
-from ember.hls.healthcare import HealthcareManager as hm
+from databricksx12 import *
+from databricksx12.hls import *
 import json
 
+hm = HealthcareManager()
 edi =  EDI(open("sampledata/837/CHPW_Claimdata.txt", "rb").read().decode("utf-8"))
 
 #Returns parsed claim data
@@ -325,6 +183,34 @@ N3*987 65TH PL
 """
 ```
 
+## Raw EDI as a Table 
+
+```python
+""""
+Look at all data refernce -> https://justransform.com/edi-essentials/edi-structure/
+  (1) Including control header / ISA & IEA segments
+"""
+from pyspark.sql.functions import input_file_name
+
+( df.withColumn("filename", input_file_name()).rdd
+  .map(lambda x: (x.asDict().get("filename"),x.asDict().get("value")))
+  .map(lambda x: (x[0], EDI(x[1])))
+  .map(lambda x: [{**{"filename": x[0]}, **y} for y in x[1].toRows()])
+  .flatMap(lambda x: x)
+  .toDF()).show()
+
+"""
++--------------------+----------+--------------------------+--------------+------------+-----------------------------+--------+
+|            row_data|row_number|segment_element_delim_char|segment_length|segment_name|segment_subelement_delim_char|filename|
++--------------------+----------+--------------------------+--------------+------------+-----------------------------+--------+
+|ISA*00*          ...|         0|                         *|            17|         ISA|                            :|file:///|
+|GS*HC*CLEARINGHOU...|         1|                         *|             9|          GS|                            :|file:///|
+|ST*837*000000001*...|         2|                         *|             4|          ST|                            :|file:///|
+|BHT*0019*00*73490...|         3|                         *|             7|         BHT|                            :|file:///|
+|NM1*41*2*CLEARING...|         4|                         *|            10|         NM1|                            :|file:///|
+|PER*IC*CLEARINGHO...|         5|                         *|             7|         PER|                            :|file:///|
+|NM1*40*2*12345678...|         6|                         *|            10|         NM1|                            :|file:///|
+```
 
 ## Project support 
 

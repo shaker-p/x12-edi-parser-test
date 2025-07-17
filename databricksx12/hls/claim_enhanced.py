@@ -79,9 +79,7 @@ class MedicalClaim(EDI):
         )
     
     def _populate_patient_loop(self) -> Dict[str, str]:
-        return self._populate_subscriber_loop() if self._first(self.subscriber_loop, "SBR").element(2) == "18" else PatientIdentity(
-            # hl = self._first([x for x in self.patient_loop if x.element(3) == "23"], "HL"),
-            hl = self._first(self.patient_loop, "HL"),
+        return PatientIdentity(hl = self._first(self.patient_loop, "HL"),    
             nm1 = self._first(self.patient_loop, "NM1"),
             n3 = self._first(self.patient_loop, "N3"),
             n4 = self._first(self.patient_loop, "N4"),

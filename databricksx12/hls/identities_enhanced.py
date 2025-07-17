@@ -209,7 +209,13 @@ class PatientIdentity(Identity):
         self.first_name = nm1.element(4) if nm1.element(4) else None
         self.last_name = nm1.element(3) if nm1.element(3) else None
         self.middle_initial = nm1.element(5) if nm1.element(5) else None
+        self.name_prefix = nm1.element(6) if nm1.element(6) else None
         self.name_suffix = nm1.element(7) if nm1.element(7) else None
+        self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
+        self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
+        self.entity_relationship_code = nm1.element(10) if nm1.element(10) else None
+        self.entity_identifier_code = nm1.element(11) if nm1.element(11) else None
+        self.name_last_or_organization_name = nm1.element(12) if nm1.element(12) else None
         
         # Demographics
         self.date_of_birth = dmg.element(2) if not dmg.is_empty() and dmg.element(2) else None
@@ -218,8 +224,6 @@ class PatientIdentity(Identity):
         self.marital_status = dmg.element(4) if not dmg.is_empty() and dmg.element(4) else None
         
         # Identifiers
-        self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
-        self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
         self.ssn = self._extract_ref_value(ref, 'SY')
         self.member_id = self._extract_ref_value(ref, 'MI')
         self.medical_record_number = self._extract_ref_value(ref, 'EA')
@@ -276,7 +280,7 @@ class PatientIdentity(Identity):
             data.update({
             f'{prefix}_hierarchical_id_number': self.hierarchical_id_number,
             f'{prefix}_hierarchical_parent_id_number': self.hierarchical_parent_id_number,
-            f'{prefix}_hierarchical_level_code': "23" if prefix == 'patient' else "22",
+            f'{prefix}_hierarchical_level_code': self.hierarchical_level_code,
             f'{prefix}_hierarchical_child_code': self.hierarchical_child_code
             })
         
@@ -286,9 +290,13 @@ class PatientIdentity(Identity):
             f'{prefix}_first_name': self.first_name,
             f'{prefix}_last_name': self.last_name,
             f'{prefix}_middle_initial': self.middle_initial,
+            f'{prefix}_name_prefix': self.name_prefix,
             f'{prefix}_name_suffix': self.name_suffix,
             f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
             f'{prefix}_response_contact_identifier': self.response_contact_identifier,
+            f'{prefix}_entity_relationship_code': self.entity_relationship_code,
+            f'{prefix}_response_entity_identifier_code': self.entity_identifier_code,
+            f'{prefix}_name_last_or_organization_name': self.name_last_or_organization_name,
             f'{prefix}_date_of_birth': self.date_of_birth,
             f'{prefix}_dob_format': self.dob_format,
             f'{prefix}_gender_code': self.gender_code,
@@ -306,7 +314,7 @@ class PatientIdentity(Identity):
             f'{prefix}_phone_number': self.phone_number,
             f'{prefix}_fax_number': self.fax_number,
             f'{prefix}_email': self.email,
-            f'{prefix}_relationship_code': self.patient_relationship_code if prefix=='patient' else self.subscriber_relationship_code,
+            f'{prefix}_relationship_code': self.patient_relationship_code if prefix=='patient' and self.patient_relationship_code else self.subscriber_relationship_code,
             f'{prefix}_payer_responsibility_sequenceNumber_code': self.payer_responsibility_sequenceNumber_code,
             f'{prefix}_claim_filing_indicator_code': self.claim_filing_indicator_code,
             f'{prefix}_employment_status': self.employment_status,
