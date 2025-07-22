@@ -130,7 +130,7 @@ class ProviderIdentity(Identity):
         data.update({
             # f'{prefix}_provider_npi': self.npi,
             f'{prefix}_provider_entity_identifier_code': self.entity_identifier_code,
-            f'{prefix}_provider_entity_type': self.entity_type,
+            f'{prefix}_provider_entity_type_qualifier': self.entity_type,
             f'{prefix}_provider_name': self.name,
             f'{prefix}_provider_first_name': self.first_name,
             f'{prefix}_provider_last_name': self.last_name,
@@ -164,7 +164,7 @@ class PayerIdentity(Identity):
         self.type = 'Organization' if nm1.element(2) == '2' else 'Individual'
         self.entity_type_code = nm1.element(1) if nm1.element(1) else None
         self.entity_type_qualifier = nm1.element(2) if nm1.element(2) else None
-        self.response_contact_name = nm1.element(3) if self.type == 'Organization' else ' '.join([nm1.element(3), nm1.element(4) or "", nm1.element(5) or ""])
+        self.response_contact_org_name = nm1.element(3) if self.type == 'Organization' else ' '.join([nm1.element(3), nm1.element(4) or "", nm1.element(5) or ""])
         self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
         self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
 
@@ -185,7 +185,7 @@ class PayerIdentity(Identity):
             f'{prefix}_entity_type': self.type,
             f'{prefix}_entity_type_code': self.entity_type_code,
             f'{prefix}_entity_type_qualifier': self.entity_type_qualifier,
-            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_response_contact_organization_name': self.response_contact_org_name,
             f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
             f'{prefix}_response_contact_identifier': self.response_contact_identifier,
             f'{prefix}_contact_function_code': self.contact_function_code,
@@ -241,10 +241,11 @@ class PatientIdentity(Identity):
         self.country_code = n4.element(4) if not n4.is_empty() and n4.element(4) else None
         
         # Relationship codes
+        self.payer_responsibility_sequence_code = sbr.element(1) if not sbr.is_empty() and sbr.element(1) else None
         self.patient_relationship_code = pat.element(1) if not pat.is_empty() and pat.element(1) else None
         self.subscriber_relationship_code = sbr.element(2) if not sbr.is_empty() and sbr.element(2) else None
         self.payer_responsibility_sequenceNumber_code = sbr.element(4) if not sbr.is_empty() and sbr.element(4) else None
-        self.claim_filing_indicator_code = sbr.element(9) if not sbr.is_empty() and sbr.element(4) else None
+        self.claim_filing_indicator_code = sbr.element(9) if not sbr.is_empty() and sbr.element(9) else None
         
         # Contact info
         self.phone_number = self._extract_contact_value(per, 'TE')
@@ -317,6 +318,7 @@ class PatientIdentity(Identity):
             f'{prefix}_phone_number': self.phone_number,
             f'{prefix}_fax_number': self.fax_number,
             f'{prefix}_email': self.email,
+            f'{prefix}_payer_responsibility_code': self.payer_responsibility_sequence_code,
             f'{prefix}_relationship_code': self.patient_relationship_code if prefix=='patient' and self.patient_relationship_code else self.subscriber_relationship_code,
             f'{prefix}_payer_responsibility_sequenceNumber_code': self.payer_responsibility_sequenceNumber_code,
             f'{prefix}_claim_filing_indicator_code': self.claim_filing_indicator_code,
@@ -338,7 +340,7 @@ class Submitter_Receiver_Identity(Identity):
         
         if not per.is_empty() and per.element(0):
             self.contact_function_code = per.element(1) if per.element(1) else None
-            self.response_contact_name = per.element(2) if per.element(2) else None
+            self.per_response_contact_name = per.element(2) if per.element(2) else None
             self.communication_qualifier = per.element(3) if per.element(3)  else None
             self.communication_qualifier_number = per.element(4) if per.element(3) else None
 
@@ -351,7 +353,7 @@ class Submitter_Receiver_Identity(Identity):
 
         else:
             self.contact_function_code =  None
-            self.response_contact_name =  None
+            self.per_response_contact_name =  None
             self.communication_qualifier =  None
             self.communication_qualifier_number =  None
 
@@ -364,15 +366,14 @@ class Submitter_Receiver_Identity(Identity):
             
     def to_denormalized_dict(self, prefix):
         return {
-           
             f'{prefix}_entity_type': self.type,
             f'{prefix}_entity_type_code': self.entity_type_code,
             f'{prefix}_entity_type_qualifier': self.entity_type_qualifier,
-            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_response_contact_organization_name': self.response_contact_name,
             f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
             f'{prefix}_response_contact_identifier': self.response_contact_identifier,
             f'{prefix}_contact_function_code': self.contact_function_code,
-            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_response_contact_name': self.per_response_contact_name,
             f'{prefix}_communication_qualifier': self.communication_qualifier,
             f'{prefix}_communication_qualifier_number': self.communication_qualifier_number,
 
@@ -385,7 +386,7 @@ class Submitter_Receiver_Identity(Identity):
         }
 
 class ClaimIdentity(Identity):
-    def __init__(self, clm, dtp, cl1=Segment.empty(), k3=Segment.empty(), hi=Segment.empty(), ref=Segment.empty()):
+    def __init__(self, clm, dtp=Segment.empty(), cl1=Segment.empty(), k3=Segment.empty(), hi=Segment.empty(), ref=Segment.empty()):
         self.claim_id = clm.element(1) if clm.element(1) else None
         self.claim_amount = clm.element(2) if clm.element(2) else None
         self.facility_type_code = clm.element(5) if clm.element(5) else None
@@ -408,6 +409,11 @@ class ClaimIdentity(Identity):
         self.member_groupor_policyNumber = ref.element(2) if ref.element(2) else None
         self.description = ref.element(3) if ref.element(3) else None
         self.reference_identifier = ref.element(4) if ref.element(4) else None
+
+        dtp  = dtp[0] if isinstance(dtp, list) and dtp else Segment.empty()
+        self.statement_date_time_qualifier = dtp.element(1) if dtp.element(1) else None
+        self.statement_date_time_format_qualifier = dtp.element(2) if dtp.element(2) else None
+        self.statement_date_time_period = dtp.element(3) if dtp.element(3) else None
 
 class RefIdentity(Identity):
     def __init__(self, ref=Segment.empty()):

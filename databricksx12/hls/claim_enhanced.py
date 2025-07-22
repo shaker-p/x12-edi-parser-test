@@ -129,6 +129,9 @@ class MedicalClaim(EDI):
             'claim_member_groupor_policyNumber': getattr(self.claim_info, 'member_groupor_policyNumber', None),
             'claim_description': getattr(self.claim_info, 'description', None),
             'claim_reference_identifier': getattr(self.claim_info, 'reference_identifier', None),
+            'claim_date_time_qualifier': getattr(self.claim_info, 'statement_date_time_qualifier', None),
+            'claim_date_time_format_qualifier': getattr(self.claim_info, 'statement_date_time_format_qualifier', None),
+            'claim_date_time_period': getattr(self.claim_info, 'statement_date_time_period', None),
             }
         
         if claim_type == '837i':
