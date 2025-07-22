@@ -100,15 +100,27 @@ class MedicalClaim(EDI):
     def _populate_payer_info(self):
         return PayerIdentity(self._first([x for x in self.subscriber_loop if x.element(1) == "PR"], "NM1"))
     
-    def to_denormalized_json(self, filename='', transaction_control_number=''):
+    def _serviceline_ref_info(self):
+        return {
+            'serviceline_reference_identification_qualifier': getattr(self.ref_info, 'reference_identification_qualifier', None),
+            'serviceline_member_groupor_policyNumber': getattr(self.ref_info, 'member_groupor_policyNumber', None),
+            'serviceline_description': getattr(self.ref_info, 'description', None),
+            'serviceline_reference_identifier': getattr(self.ref_info, 'reference_identifier', None)
+
+        }
+
+    def to_denormalized_json(self, filename='', transaction_control_number='', claim_type=None):
         """Convert claim to single-row denormalized structure"""
         
         # Base metadata
         base_data = {
             'filename': filename,
-            'transaction_control_number': transaction_control_number,
+            'transaction_control_number': transaction_control_number
+        }
+
+        cliam_data = {    
             'claim_id': getattr(self.claim_info, 'claim_id', None),
-            'total_claim_charge_amount': getattr(self.claim_info, 'claim_amount', None),
+            'claim_total_charge_amount': getattr(self.claim_info, 'claim_amount', None),
             'claim_provider_supplier_signature_indicator': getattr(self.claim_info, 'provider_supplier_signature_indicator', None),
             'claim_assignment_or_plan_participation_code': getattr(self.claim_info, 'assignment_or_plan_participation_code', None),
             'claim_benefits_assignment_certification_indicator': getattr(self.claim_info, 'benefits_assignment_certification_indicator', None),
@@ -117,13 +129,25 @@ class MedicalClaim(EDI):
             'claim_member_groupor_policyNumber': getattr(self.claim_info, 'member_groupor_policyNumber', None),
             'claim_description': getattr(self.claim_info, 'description', None),
             'claim_reference_identifier': getattr(self.claim_info, 'reference_identifier', None),
-            'serviceline_reference_identification_qualifier': getattr(self.ref_info, 'reference_identification_qualifier', None),
-            'serviceline_member_groupor_policyNumber': getattr(self.ref_info, 'member_groupor_policyNumber', None),
-            'serviceline_description': getattr(self.ref_info, 'description', None),
-            'serviceline_reference_identifier': getattr(self.ref_info, 'reference_identifier', None)
-
-        }
+            }
         
+        if claim_type == '837i':
+            cliam_data.update({
+                    'claim_service_location_information': getattr(self.claim_info, 'facility_type_code', None),
+                    'claim_admission_type_code': getattr(self.claim_info, 'admission_type', None),
+                    'claim_admission_source_code': getattr(self.claim_info, 'admission_src_cd', None),
+                    'claim_patient_status_code': getattr(self.claim_info, 'discharge_status_cd', None),
+                    'claim_drg_code': getattr(self.claim_info, 'drg_cd', None),
+                    'claim_medical_record_number': getattr(self.claim_info, 'encounter_id', None),
+                    'claim_transaction_type': '223'
+                })
+
+        if claim_type == '837p': 
+            cliam_data.update({
+                    'claim_service_location_information': getattr(self.claim_info, 'facility_type_code', None),
+                    'claim_transaction_type': '222'
+                })
+                
         # Add flattened bht information
         if hasattr(self, 'bht_info') and self.bht_info:
             base_data.update(self.bht_info.to_denormalized_dict('bht'))
@@ -142,7 +166,7 @@ class MedicalClaim(EDI):
         
         # Add flattened payer information
         if hasattr(self, 'payer_info') and self.payer_info:
-            base_data.update(self.payer_info.to_denormalized_dict())
+            base_data.update(self.payer_info.to_denormalized_dict('payer'))
         
         # Add flattened submitter/receiver
         if hasattr(self, 'submitter_info') and self.submitter_info:
@@ -156,6 +180,9 @@ class MedicalClaim(EDI):
                 if provider_data:
                     base_data.update(provider_data.to_denormalized_dict(provider_type))
         
+        # updating claim information
+        base_data.update(cliam_data)
+
         # Add JSON arrays for repeating elements
         base_data.update({
             'diagnosis_codes': self._diagnosis_to_json_array_safe(),
@@ -222,7 +249,7 @@ class MedicalClaim(EDI):
                 line_data[f'place_of_service_code'] = getattr(service_line, 'place_of_service', None)
             
             if hasattr(service_line, 'dg_cd_pntr'):
-                line_data[f"composite_diagnosis_code_pointer"] = { f"diagnosis_code_pointer_{i}": str(i) for i in range(1, len(service_line.dg_cd_pntr.split(":"))+1)}
+                line_data[f"composite_diagnosis_code_pointer"] = [{ f"diagnosis_code_pointer": str(i)} for i in range(1, len(service_line.dg_cd_pntr.split(":"))+1)]
 
             service_lines.append(line_data)
         
@@ -300,19 +327,24 @@ class Claim837i(MedicalClaim):
 
     def to_denormalized_json(self, filename='', transaction_control_number=''):
         """837I specific denormalized output"""
-        base_data = super().to_denormalized_json(filename, transaction_control_number)
+        base_data = super().to_denormalized_json(filename, transaction_control_number, claim_type='837i')
         
         # Add 837I specific fields
-        base_data.update({
-            'type_of_bill_code': getattr(self.claim_info, 'facility_type_code', None),
-            'admission_type_code': getattr(self.claim_info, 'admission_type', None),
-            'admission_source_code': getattr(self.claim_info, 'admission_src_cd', None),
-            'patient_status_code': getattr(self.claim_info, 'discharge_status_cd', None),
-            'drg_code': getattr(self.claim_info, 'drg_cd', None),
-            'medical_record_number': getattr(self.claim_info, 'encounter_id', None),
+        # flattened service information
+        base_data.update(self._serviceline_ref_info())
+        
+        # flattened claim information
+        # base_data.update(self._claim_all_info(claim_type='institutional'))
 
-            'transaction_type': '223'
-        })
+        # base_data.update({
+        #     'claim_service_location_information': getattr(self.claim_info, 'facility_type_code', None),
+        #     'claim_admission_type_code': getattr(self.claim_info, 'admission_type', None),
+        #     'claim_admission_source_code': getattr(self.claim_info, 'admission_src_cd', None),
+        #     'claim_patient_status_code': getattr(self.claim_info, 'discharge_status_cd', None),
+        #     'claim_drg_code': getattr(self.claim_info, 'drg_cd', None),
+        #     'claim_medical_record_number': getattr(self.claim_info, 'encounter_id', None),
+        #     'transaction_type': '223'
+        # })
         
         return base_data
 
@@ -349,13 +381,18 @@ class Claim837p(MedicalClaim):
 
     def to_denormalized_json(self, filename='', transaction_control_number=''):
         """837P specific denormalized output"""
-        base_data = super().to_denormalized_json(filename, transaction_control_number)
+        base_data = super().to_denormalized_json(filename, transaction_control_number, claim_type='837p')
         
-        # Add 837P specific fields
-        base_data.update({
-            'place_of_service_code': getattr(self.claim_info, 'facility_type_code', None),
-            'transaction_type': '222'
-        })
+        # flattened service information
+        base_data.update(self._serviceline_ref_info())
+        
+        # # flattened claim information
+        # base_data.update(self._claim_all_info())
+        # # Add 837P specific fields
+        # base_data.update({
+        #     'claim_service_location_information': getattr(self.claim_info, 'facility_type_code', None),
+        #     'transaction_type': '222'
+        # })
         
         return base_data
 

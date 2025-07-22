@@ -131,3 +131,6 @@ dmypy.json
 .pyre/
 
 databricksx12_old/
+
+#ignore testing files
+testing.py

@@ -56,11 +56,14 @@ class ProviderIdentity(Identity):
         self.first_name = nm1.element(4) if self.entity_type == '1' and nm1.element(4) else None
         self.last_name = nm1.element(3) if self.entity_type == '1' and nm1.element(3) else None
         self.middle_initial = nm1.element(5) if self.entity_type == '1' and nm1.element(5) else None
+        self.name_prefix = nm1.element(6) if self.entity_type == '1' and nm1.element(6) else None
         self.name_suffix = nm1.element(7) if self.entity_type == '1' and nm1.element(7) else None
-        
+        self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
+        self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
+
         # Identifiers
-        self.npi = nm1.element(9) if nm1.element(9) else None
-        self.id_qualifier = nm1.element(8) if nm1.element(8) else None
+        # self.npi = nm1.element(9) if nm1.element(9) else None
+        # self.id_qualifier = nm1.element(8) if nm1.element(8) else None
         self.taxonomy_code = prv.element(3) if not prv.is_empty() and prv.element(3) else None
         self.provider_role = prv.element(1) if not prv.is_empty() and prv.element(1) else None
         self.specialty_code = prv.element(2) if not prv.is_empty() and prv.element(2) else None
@@ -125,15 +128,17 @@ class ProviderIdentity(Identity):
 
         # Add provider specific fields
         data.update({
-            f'{prefix}_provider_npi': self.npi,
+            # f'{prefix}_provider_npi': self.npi,
+            f'{prefix}_provider_entity_identifier_code': self.entity_identifier_code,
+            f'{prefix}_provider_entity_type': self.entity_type,
             f'{prefix}_provider_name': self.name,
             f'{prefix}_provider_first_name': self.first_name,
             f'{prefix}_provider_last_name': self.last_name,
             f'{prefix}_provider_middle_initial': self.middle_initial,
+            f'{prefix}_provider_name_prefix': self.name_prefix,
             f'{prefix}_provider_name_suffix': self.name_suffix,
-            f'{prefix}_provider_entity_type': self.entity_type,
-            f'{prefix}_provider_entity_identifier_code': self.entity_identifier_code,
-            f'{prefix}_provider_entity_type_qualifier': self.entity_type_qualifier,
+            f'{prefix}_provider_identification_code_qualifier': self.identification_code_qualifier,
+            f'{prefix}_provider_response_contact_identifier': self.response_contact_identifier,
             f'{prefix}_provider_taxonomy_code': self.taxonomy_code,
             f'{prefix}_provider_code': self.provider_role,
             f'{prefix}_provider_specialty_code': self.specialty_code,
@@ -155,41 +160,39 @@ class ProviderIdentity(Identity):
         return data
 
 class PayerIdentity(Identity):
-    def __init__(self, nm1, n3=Segment.empty(), n4=Segment.empty(), per=Segment.empty(), ref=Segment.empty()):
-        self.name = nm1.element(3) if nm1.element(3) else None
-        self.id = nm1.element(9) if nm1.element(9) else None
-        self.id_qualifier = nm1.element(8) if nm1.element(8) else None
-        self.entity_type = nm1.element(2) if nm1.element(2) else None
-        self.entity_type_code = nm1.element(1) if nm1.element(1) else None  # TODO
+    def __init__(self, nm1=Segment.empty(), per=Segment.empty()):
+        self.type = 'Organization' if nm1.element(2) == '2' else 'Individual'
+        self.entity_type_code = nm1.element(1) if nm1.element(1) else None
+        self.entity_type_qualifier = nm1.element(2) if nm1.element(2) else None
+        self.response_contact_name = nm1.element(3) if self.type == 'Organization' else ' '.join([nm1.element(3), nm1.element(4) or "", nm1.element(5) or ""])
+        self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
+        self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
 
         
-        # Address
-        self.address_line1 = n3.element(1) if not n3.is_empty() and n3.element(1) else None
-        self.address_line2 = n3.element(2) if not n3.is_empty() and n3.element(2) else None
-        self.city = n4.element(1) if not n4.is_empty() and n4.element(1) else None
-        self.state = n4.element(2) if not n4.is_empty() and n4.element(2) else None
-        self.zip_code = n4.element(3) if not n4.is_empty() and n4.element(3) else None
-        self.country_code = n4.element(4) if not n4.is_empty() and n4.element(4) else None
-        
-        # Contact
-        self.phone_number = per.element(4) if not per.is_empty() and per.element(3) == 'TE' else None
-        self.fax_number = per.element(4) if not per.is_empty() and per.element(3) == 'FX' else None
-        
-    def to_denormalized_dict(self):
+        if not per.is_empty() and per.element(0):
+            self.contact_function_code = per.element(1) if per.element(1) else None
+            self.response_contact_name = per.element(2) if per.element(2) else None
+            self.communication_qualifier = per.element(3) if per.element(3)  else None
+            self.communication_qualifier_number = per.element(4) if per.element(3) else None
+        else:
+            self.contact_function_code =  None
+            self.response_contact_name =  None
+            self.communication_qualifier =  None
+            self.communication_qualifier_number =  None
+ 
+    def to_denormalized_dict(self, prefix):
         return {
-            'payer_name': self.name,
-            'payer_id': self.id,
-            'payer_id_qualifier': self.id_qualifier,
-            'payer_entity_type': self.entity_type,
-            'payer_entity_code': self.entity_type_code,
-            'payer_address_line1': self.address_line1,
-            'payer_address_line2': self.address_line2,
-            'payer_city': self.city,
-            'payer_state': self.state,
-            'payer_zip_code': self.zip_code,
-            'payer_country_code': self.country_code,
-            'payer_phone_number': self.phone_number,
-            'payer_fax_number': self.fax_number
+            f'{prefix}_entity_type': self.type,
+            f'{prefix}_entity_type_code': self.entity_type_code,
+            f'{prefix}_entity_type_qualifier': self.entity_type_qualifier,
+            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
+            f'{prefix}_response_contact_identifier': self.response_contact_identifier,
+            f'{prefix}_contact_function_code': self.contact_function_code,
+            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_communication_qualifier': self.communication_qualifier,
+            f'{prefix}_communication_qualifier_number': self.communication_qualifier_number,
+
         }
 
 class PatientIdentity(Identity):
@@ -214,7 +217,7 @@ class PatientIdentity(Identity):
         self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
         self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
         self.entity_relationship_code = nm1.element(10) if nm1.element(10) else None
-        self.entity_identifier_code = nm1.element(11) if nm1.element(11) else None
+        self.response_entity_identifier_code = nm1.element(11) if nm1.element(11) else None
         self.name_last_or_organization_name = nm1.element(12) if nm1.element(12) else None
         
         # Demographics
@@ -295,7 +298,7 @@ class PatientIdentity(Identity):
             f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
             f'{prefix}_response_contact_identifier': self.response_contact_identifier,
             f'{prefix}_entity_relationship_code': self.entity_relationship_code,
-            f'{prefix}_response_entity_identifier_code': self.entity_identifier_code,
+            f'{prefix}_response_entity_identifier_code': self.response_entity_identifier_code,
             f'{prefix}_name_last_or_organization_name': self.name_last_or_organization_name,
             f'{prefix}_date_of_birth': self.date_of_birth,
             f'{prefix}_dob_format': self.dob_format,
@@ -326,11 +329,12 @@ class PatientIdentity(Identity):
 class Submitter_Receiver_Identity(Identity):
     def __init__(self, nm1=Segment.empty(), per=Segment.empty()):
         self.type = 'Organization' if nm1.element(2) == '2' else 'Individual'
+        self.entity_type_code = nm1.element(1) if nm1.element(1) else None
         self.entity_type_qualifier = nm1.element(2) if nm1.element(2) else None
-        self.entity_identifier_code = nm1.element(1) if nm1.element(1) else None
-        self.name = nm1.element(3) if self.type == 'Organization' else ' '.join([nm1.element(3), nm1.element(4) or "", nm1.element(5) or ""])
-        self.id = nm1.element(9) if nm1.element(9) else None
-        self.id_qualifier = nm1.element(8) if nm1.element(8) else None
+        self.response_contact_name = nm1.element(3) if self.type == 'Organization' else ' '.join([nm1.element(3), nm1.element(4) or "", nm1.element(5) or ""])
+        self.identification_code_qualifier = nm1.element(8) if nm1.element(8) else None
+        self.response_contact_identifier = nm1.element(9) if nm1.element(9) else None
+
         
         if not per.is_empty() and per.element(0):
             self.contact_function_code = per.element(1) if per.element(1) else None
@@ -360,12 +364,13 @@ class Submitter_Receiver_Identity(Identity):
             
     def to_denormalized_dict(self, prefix):
         return {
-            f'{prefix}_name': self.name,
+           
             f'{prefix}_entity_type': self.type,
+            f'{prefix}_entity_type_code': self.entity_type_code,
             f'{prefix}_entity_type_qualifier': self.entity_type_qualifier,
-            f'{prefix}_entity_identifier_code': self.entity_identifier_code,
-            f'{prefix}_id': self.id,
-            f'{prefix}_id_qualifier': self.id_qualifier,
+            f'{prefix}_response_contact_name': self.response_contact_name,
+            f'{prefix}_identification_code_qualifier': self.identification_code_qualifier,
+            f'{prefix}_response_contact_identifier': self.response_contact_identifier,
             f'{prefix}_contact_function_code': self.contact_function_code,
             f'{prefix}_response_contact_name': self.response_contact_name,
             f'{prefix}_communication_qualifier': self.communication_qualifier,
@@ -417,7 +422,6 @@ class DiagnosisIdentity(Identity):
         if hi_segments:
             self.principal_dx_cd = [s.split(":") for s in hi_segments[0].data.split("*")[1:]]
 
-
 class ServiceLine(Identity):
     def __init__(self, d):
         for k,v in d.items():
@@ -443,7 +447,7 @@ class ServiceLine(Identity):
                         "prcdr_cd_type": sv2.element(2, 0, "") if sv2.element(2, 0, "") else None,
                         "modifier_cds": ','.join(filter(lambda x: x!="", [sv2.element(2, 2, ""), sv2.element(2, 3, ""), sv2.element(2, 4,""), sv2.element(2, 5, "")])),
                         "revenue_cd": sv2.element(1) if sv2.element(1) else None,
-                        "dg_cd_pntr": sv2.element(5) if sv2.element(5) else None,
+                        # "dg_cd_pntr": sv2.element(5) if sv2.element(5) else None,
                     }
                 })
 
